@@ -1,5 +1,5 @@
-# BSP nucleo-f429zi : paramètres hors manifeste (PA-7 Q3), inclus par le CMakeLists.txt racine
-# du greffon noyau quand LEPTON_BOARD=nucleo-f429zi. XML mklepton : LEPTON_MKCONF du preset.
+# BSP nucleo-f439zi : paramètres hors manifeste (PA-7 Q3), inclus par le CMakeLists.txt racine
+# du greffon noyau quand LEPTON_BOARD=nucleo-f439zi. XML mklepton : LEPTON_MKCONF du preset.
 # HSE_VALUE (manifeste) : MCO du ST-LINK (8 MHz, HSE en bypass), UM1974.
 set(LEPTON_NET_STACK lwip)   # USE_LWIP dans include/user_kernel_mkconf.h
 set(LEPTON_BOARD_UNAME_MACHINE cortexM4-stm32f4)   # __KERNEL_CPU_DEVICE_NAME (kernelconf.h)
