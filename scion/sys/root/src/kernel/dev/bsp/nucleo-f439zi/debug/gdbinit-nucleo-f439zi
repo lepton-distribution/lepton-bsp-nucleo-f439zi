@@ -1,0 +1,7 @@
+# gdb-multiarch — NUCLEO-F429ZI (BSP nucleo-f429zi ; étape 5, ENV-6). Procédure : doc/migration/debug-gcc.md.
+# Depuis la racine du trunk :
+#   terminal 1 : openocd -f sys/root/src/kernel/dev/bsp/nucleo-f439zi/debug/openocd-nucleo-f439zi.cfg
+#   terminal 2 : gdb-multiarch -x sys/root/src/kernel/dev/bsp/nucleo-f439zi/debug/gdbinit-nucleo-f439zi $LEPTON_BUILD/nucleo-f429zi-embos/lepton.elf
+# Commandes Cortex-M communes (lepton-load, lepton-fault, lepton-stacks) : debug/gdbinit-lepton du
+# noyau, sans rien de propre à la carte. Source de la PLL : nucleo_f439zi_clock_hse (1 : HSE).
+source debug/gdbinit-lepton

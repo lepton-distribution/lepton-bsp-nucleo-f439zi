@@ -1,0 +1,30 @@
+{
+  "nom": "nucleo-f439zi",
+  "type": "bsp",
+  "version": "0.1.0",
+  "description": "BSP nucleo-f439zi, dérivé de nucleo-f429zi.",
+  "destination": "kernel/dev/bsp/nucleo-f439zi",
+  "bibliotheque": "bsp",
+  "famille": "stm32f4xx",
+  "coeur": "cortex-m4f",
+  "mcu": "STM32F429ZI",
+  "frequence_cpu": 168000000,
+  "entete_config_noyau": "include/user_kernel_mkconf.h",
+  "script_liens": "ld/mem_nucleo-f439zi.ld",
+  "demarrage": [
+    "nucleo_f439zi_board.c"
+  ],
+  "openocd": [
+    "debug/openocd-nucleo-f439zi.cfg"
+  ],
+  "sonde": "stlink",
+  "compilation": {
+    "publique": {
+      "definitions": [
+        "__tauon_cpu_device__=__tauon_cpu_device_cortexM4_stm32f4__",
+        "STM32F429xx",
+        "HSE_VALUE=8000000"
+      ]
+    }
+  }
+}
