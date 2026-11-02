@@ -18,6 +18,9 @@
     "debug/openocd-nucleo-f439zi.cfg"
   ],
   "sonde": "stlink",
+  "svd": {
+    "famille": "svd/STM32F439.svd"
+  },
   "compilation": {
     "publique": {
       "definitions": [
