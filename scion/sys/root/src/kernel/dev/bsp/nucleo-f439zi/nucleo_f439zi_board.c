@@ -3,9 +3,10 @@
  * Licence : voir LICENSE (MPL 1.1).
  *
  * Horloges (SystemInit, appelée par le démarrage générique kernel/core/arch/cortexm), GPIO,
- * périphériques /dev/board, /dev/ttys3 (USART3, console), /dev/ttys6 (USART6), descripteur
- * Ethernet de la couche eth.c (/dev/eth0 : dev_stm32f4xx_eth_map). Interruptions : famille
- * stm32f4xx, vecteurs/stm32f429xx_vectors.c. Écrit d'après le BSP Olimex STM32-P407.
+ * périphériques /dev/board, /dev/ttys3 (USART3, console), /dev/ttys6 (USART6), /dev/eth0
+ * (dev_stm32f4xx_eth_map, pilote dev_stm32f4xx_eth_x de la famille, HAL ETH). Interruptions :
+ * famille stm32f4xx, vecteurs/stm32f429xx_vectors.c. Écrit d'après le BSP Olimex STM32-P407 ;
+ * HAL STM32F4 depuis ENV-35 (comme le BSP STM32F746G-DISCO : HAL_ETH_MspInit, pas de HAL_Init).
  */
 #include <stdint.h>
 #include <stdarg.h>
@@ -21,13 +22,13 @@
 #include "kernel/fs/vfs/vfstypes.h"
 #include "kernel/core/ioctl_board.h"
 #include "kernel/core/ioctl_eth.h"
-#include "kernel/dev/arch/cortexm/stm32f4xx/driverlib/stm32f4xx.h"
+#include "stm32f4xx_hal.h"
 #include "kernel/dev/arch/cortexm/stm32f4xx/types.h"
 #include "kernel/dev/arch/cortexm/stm32f4xx/gpio.h"
 #include "kernel/dev/arch/cortexm/stm32f4xx/dma.h"
 #include "kernel/dev/arch/cortexm/stm32f4xx/uart.h"
-#include "kernel/dev/arch/cortexm/stm32f4xx/eth.h"
 #include "kernel/dev/arch/cortexm/stm32f4xx/dev_stm32f4xx/dev_stm32f4xx_uart_x.h"
+#include "kernel/dev/arch/cortexm/stm32f4xx/dev_stm32f4xx/dev_stm32f4xx_eth_x.h"
 
 #include "nucleo_f439zi.h"
 
@@ -38,7 +39,7 @@ uint32_t SystemCoreClock = 16000000u;   /* HSI après reset */
 volatile uint32_t nucleo_f439zi_clock_hse;
 
 #define NUCLEO_F439ZI_HSE_TIMEOUT 100000u
-/* positions des champs (RM0090 6.3.2, 3.9.1 ; absentes du stm32f429xx.h de l'arbre) */
+/* positions des champs (RM0090 6.3.2, 3.9.1 ; absentes du stm32f429xx.h de la SPL, gardées) */
 #define NUCLEO_F439ZI_PLLN_POS     6
 #define NUCLEO_F439ZI_PLLP_POS     16
 #define NUCLEO_F439ZI_PLLQ_POS     24
@@ -94,33 +95,34 @@ void SystemInit(void){
 }
 
 void SystemCoreClockUpdate(void){
-   RCC_ClocksTypeDef clocks;
-   RCC_GetClocksFreq(&clocks);
-   SystemCoreClock = clocks.SYSCLK_Frequency;
+   /* seules sources possibles ici : PLL réglée par SystemInit (168 MHz, HSE ou HSI), ou HSI
+      (reset) */
+   SystemCoreClock = ((RCC->CFGR & RCC_CFGR_SWS) == RCC_CFGR_SWS_PLL) ? NUCLEO_F439ZI_SYSCLK_HZ
+                                                                      : 16000000u;
 }
 
 /* --- GPIO (couche gpio.c ; ordre de _GPIO_LIST) ------------------------------------------------- */
 const _Gpio_Descriptor Gpio_Descriptor[] = {
-   {GPIO_TYPE_STD, GPIOD, GPIO_Pin_8,  0, GPIO_MODE_IN,  0},   /* GPIO_TXD3 (uart.c : AF) */
-   {GPIO_TYPE_STD, GPIOD, GPIO_Pin_9,  0, GPIO_MODE_IN,  0},   /* GPIO_RXD3 */
-   {GPIO_TYPE_STD, GPIOG, GPIO_Pin_14, 0, GPIO_MODE_IN,  0},   /* GPIO_TXD6 */
-   {GPIO_TYPE_STD, GPIOG, GPIO_Pin_9,  0, GPIO_MODE_IN,  0},   /* GPIO_RXD6 */
-   {GPIO_TYPE_STD, GPIOB, GPIO_Pin_0,  1, GPIO_MODE_OUT, 0},   /* GPIO_LED1 (LD1 verte) */
-   {GPIO_TYPE_STD, GPIOB, GPIO_Pin_7,  1, GPIO_MODE_OUT, 0},   /* GPIO_LED2 (LD2 bleue) */
-   {GPIO_TYPE_STD, GPIOB, GPIO_Pin_14, 1, GPIO_MODE_OUT, 0},   /* GPIO_LED3 (LD3 rouge) */
-   {GPIO_TYPE_STD, GPIOC, GPIO_Pin_13, 1, GPIO_MODE_IN,  0}    /* GPIO_BUTTON (B1) */
+   {GPIO_TYPE_STD, GPIOD, GPIO_PIN_8,  0, GPIO_MODE_IN,  0},   /* GPIO_TXD3 (uart.c : AF) */
+   {GPIO_TYPE_STD, GPIOD, GPIO_PIN_9,  0, GPIO_MODE_IN,  0},   /* GPIO_RXD3 */
+   {GPIO_TYPE_STD, GPIOG, GPIO_PIN_14, 0, GPIO_MODE_IN,  0},   /* GPIO_TXD6 */
+   {GPIO_TYPE_STD, GPIOG, GPIO_PIN_9,  0, GPIO_MODE_IN,  0},   /* GPIO_RXD6 */
+   {GPIO_TYPE_STD, GPIOB, GPIO_PIN_0,  1, GPIO_MODE_OUT, 0},   /* GPIO_LED1 (LD1 verte) */
+   {GPIO_TYPE_STD, GPIOB, GPIO_PIN_7,  1, GPIO_MODE_OUT, 0},   /* GPIO_LED2 (LD2 bleue) */
+   {GPIO_TYPE_STD, GPIOB, GPIO_PIN_14, 1, GPIO_MODE_OUT, 0},   /* GPIO_LED3 (LD3 rouge) */
+   {GPIO_TYPE_STD, GPIOC, GPIO_PIN_13, 1, GPIO_MODE_IN,  0}    /* GPIO_BUTTON (B1) */
 };
 
 /* --- UART : descripteurs (uart.c), DMA de réception (RM0090, tables 42 et 43) ----------------- */
 board_stm32f4xx_uart_info_t nucleo_f439zi_uart_3 = {
-   .uart_descriptor = {USART3, RCC_APB1PeriphClockCmd, RCC_APB1Periph_USART3, USART3_IRQn,
-                       DMA1_Stream1, DMA_Channel_4, DMA1_Stream1_IRQn,
-                       GPIO_TXD3, GPIO_RXD3, GPIO_AF_USART3, &Uart_Ctrl[UART_ID_3]}
+   .uart_descriptor = {USART3, &RCC->APB1ENR, &RCC->APB1RSTR, RCC_APB1ENR_USART3EN, USART3_IRQn,
+                       DMA1_Stream1, UART_DMA_CHANNEL(4), DMA1_Stream1_IRQn,
+                       GPIO_TXD3, GPIO_RXD3, GPIO_AF7_USART3, &Uart_Ctrl[UART_ID_3]}
 };
 board_stm32f4xx_uart_info_t nucleo_f439zi_uart_6 = {
-   .uart_descriptor = {USART6, RCC_APB2PeriphClockCmd, RCC_APB2Periph_USART6, USART6_IRQn,
-                       DMA2_Stream1, DMA_Channel_5, DMA2_Stream1_IRQn,
-                       GPIO_TXD6, GPIO_RXD6, GPIO_AF_USART6, &Uart_Ctrl[UART_ID_6]}
+   .uart_descriptor = {USART6, &RCC->APB2ENR, &RCC->APB2RSTR, RCC_APB2ENR_USART6EN, USART6_IRQn,
+                       DMA2_Stream1, UART_DMA_CHANNEL(5), DMA2_Stream1_IRQn,
+                       GPIO_TXD6, GPIO_RXD6, GPIO_AF8_USART6, &Uart_Ctrl[UART_ID_6]}
 };
 
 /* gestionnaires, appelés par nucleo_f439zi_vectors.c */
@@ -165,27 +167,85 @@ extern int dev_stm32f4xx_uart_x_seek(desc_t desc, int offset, int origin);
 NUCLEO_F439ZI_UART_INSTANCE(3)
 NUCLEO_F439ZI_UART_INSTANCE(6)
 
-/* --- Ethernet RMII, PHY LAN8742A (eth.c ; UM1974 6.11, broches fixées par la carte) ----------- */
-static const eth_stm32f4x7_bsp_pin_t nucleo_f439zi_eth_pins[] = {
-   {GPIOA, GPIO_PinSource1},  {GPIOA, GPIO_PinSource2},  {GPIOA, GPIO_PinSource7},  /* REF_CLK, MDIO, CRS_DV */
-   {GPIOB, GPIO_PinSource13},                                                        /* TXD1 */
-   {GPIOC, GPIO_PinSource1},  {GPIOC, GPIO_PinSource4},  {GPIOC, GPIO_PinSource5},  /* MDC, RXD0, RXD1 */
-   {GPIOG, GPIO_PinSource11}, {GPIOG, GPIO_PinSource13}                             /* TX_EN, TXD0 */
+/* --- Ethernet RMII, PHY LAN8742A (dev_stm32f4xx_eth_x ; UM1974 6.11, broches fixées par la
+   carte) : PA1 REF_CLK, PA2 MDIO, PA7 CRS_DV, PB13 TXD1, PC1 MDC, PC4 RXD0, PC5 RXD1, PG11 TX_EN,
+   PG13 TXD0 (AF11) ------------------------------------------------------------------------- */
+void HAL_ETH_MspInit(ETH_HandleTypeDef* heth){
+   GPIO_InitTypeDef gpio;
+   (void)heth;
+   __HAL_RCC_GPIOA_CLK_ENABLE();
+   __HAL_RCC_GPIOB_CLK_ENABLE();
+   __HAL_RCC_GPIOC_CLK_ENABLE();
+   __HAL_RCC_GPIOG_CLK_ENABLE();
+   gpio.Mode = GPIO_MODE_AF_PP;
+   gpio.Pull = GPIO_NOPULL;
+   gpio.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+   gpio.Alternate = GPIO_AF11_ETH;
+   gpio.Pin = GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_7;
+   HAL_GPIO_Init(GPIOA, &gpio);
+   gpio.Pin = GPIO_PIN_13;
+   HAL_GPIO_Init(GPIOB, &gpio);
+   gpio.Pin = GPIO_PIN_1 | GPIO_PIN_4 | GPIO_PIN_5;
+   HAL_GPIO_Init(GPIOC, &gpio);
+   gpio.Pin = GPIO_PIN_11 | GPIO_PIN_13;
+   HAL_GPIO_Init(GPIOG, &gpio);
+   __HAL_RCC_ETHMAC_CLK_ENABLE();
+   __HAL_RCC_ETHMACTX_CLK_ENABLE();
+   __HAL_RCC_ETHMACRX_CLK_ENABLE();
+}
+
+static void nucleo_f439zi_eth_irq_enable(dev_stm32f4xx_eth_info_t* info, int enable){
+   (void)info;
+   if(enable) {
+      NVIC_SetPriority(ETH_IRQn, NUCLEO_F439ZI_IRQ_PRIO);
+      NVIC_ClearPendingIRQ(ETH_IRQn);
+      NVIC_EnableIRQ(ETH_IRQn);
+   } else {
+      NVIC_DisableIRQ(ETH_IRQn);
+   }
+}
+
+static dev_stm32f4xx_eth_info_t nucleo_f439zi_eth = {
+   BOARD_ETH_PHY_ADDR, BOARD_ETH_PHY_SR, BOARD_ETH_PHY_DUPLEX_SPEED_MASK,
+   BOARD_ETH_PHY_100BTX_FULL, BOARD_ETH_PHY_100BTX_HALF, BOARD_ETH_PHY_10M_FULL,
+   BOARD_ETH_PHY_10M_HALF, nucleo_f439zi_eth_irq_enable
 };
 
-const eth_stm32f4x7_bsp_t eth_stm32f4x7_bsp = {
-   RCC_AHB1Periph_GPIOA | RCC_AHB1Periph_GPIOB | RCC_AHB1Periph_GPIOC | RCC_AHB1Periph_GPIOG,
-   GPIO_Speed_100MHz,
-   nucleo_f439zi_eth_pins, sizeof(nucleo_f439zi_eth_pins) / sizeof(nucleo_f439zi_eth_pins[0]),
-   BOARD_ETH_PHY_ID1, BOARD_ETH_PHY_ID2, BOARD_ETH_PHY_ID2_MASK,
-   BOARD_ETH_PHY_ADDR_FIRST
+/* gestionnaire, appelé par vecteurs/stm32f429xx_vectors.c (IRQ 61) */
+void ETH_IRQHandler(void) { dev_stm32f4xx_eth_x_interrupt(&nucleo_f439zi_eth); }
+
+static int dev_nucleo_f439zi_eth_0_load(void){
+   return dev_stm32f4xx_eth_x_load(&nucleo_f439zi_eth);
+}
+
+static int dev_nucleo_f439zi_eth_0_open(desc_t desc, int o_flag){
+   return dev_stm32f4xx_eth_x_open(desc, o_flag, &nucleo_f439zi_eth);
+}
+
+/* nom gardé : XML mklepton de la carte (dev_stm32f4xx_eth_map, défini par la famille jusqu'à
+   ENV-35) */
+dev_map_t dev_stm32f4xx_eth_map = {
+   "eth0\0",
+   S_IFCHR,
+   dev_nucleo_f439zi_eth_0_load,
+   dev_nucleo_f439zi_eth_0_open,
+   dev_stm32f4xx_eth_x_close,
+   dev_stm32f4xx_eth_x_isset_read,
+   dev_stm32f4xx_eth_x_isset_write,
+   dev_stm32f4xx_eth_x_read,
+   dev_stm32f4xx_eth_x_write,
+   dev_stm32f4xx_eth_x_seek,
+   dev_stm32f4xx_eth_x_ioctl
 };
 
 /* --- /dev/board : GPIO et DMA, chargé avant les UART (ordre du mkconf) ------------------------ */
 static int dev_nucleo_f439zi_board_load(void){
    unsigned int i;
-   RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA | RCC_AHB1Periph_GPIOB | RCC_AHB1Periph_GPIOC
-                          | RCC_AHB1Periph_GPIOD | RCC_AHB1Periph_GPIOG, ENABLE);
+   __HAL_RCC_GPIOA_CLK_ENABLE();
+   __HAL_RCC_GPIOB_CLK_ENABLE();
+   __HAL_RCC_GPIOC_CLK_ENABLE();
+   __HAL_RCC_GPIOD_CLK_ENABLE();
+   __HAL_RCC_GPIOG_CLK_ENABLE();
    for(i = 0; i < GPIO_NB; i++) {
       if(Gpio_Descriptor[i].Init)
          gpio_init(&Gpio_Descriptor[i]);

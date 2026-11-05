@@ -1,6 +1,6 @@
 /*
  * Configuration applicative de la carte NUCLEO-F439ZI (BSP nucleo-f439zi, ENV-20). Les axes
- * (micro-noyau, cœur, périphérique __tauon_cpu_device__, puce STM32F429xx) sont posés par CMake
+ * (micro-noyau, cœur, périphérique __tauon_cpu_device__, puce STM32F439xx) sont posés par CMake
  * (cmake/kal, manifestes lepton-greffon.json de la famille et du BSP), pas ici.
  */
 #ifndef _USER_KERNEL_MKCONF_H_
