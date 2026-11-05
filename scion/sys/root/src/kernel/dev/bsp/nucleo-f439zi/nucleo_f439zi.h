@@ -3,12 +3,13 @@
  * Licence : voir LICENSE (MPL 1.1).
  *
  * Configuration de carte attendue par la couche STM32F4 de Lepton (kernel/dev/arch/cortexm/
- * stm32f4xx : gpio.c, uart.c, eth.c), incluse par user_kernel_mkconf.h de l'application comme
+ * stm32f4xx : gpio.c, uart.c, dev_stm32f4xx_eth_x.c), incluse par user_kernel_mkconf.h de l'application comme
  * pour l'Olimex STM32-P407 : liste des GPIO, des UART, réglages du PHY Ethernet.
  * Seul endroit (avec le manifeste et ld/mem_nucleo-f439zi.ld) où figurent broches, fréquences et
  * interruptions de la carte. Référence : UM1974 (cartes NUCLEO-144), RM0090, fiche LAN8742A.
- * Ne pas inclure d'en-tête ST ici (inclus par kernelconf.h dans tout le noyau) : les descripteurs
- * ne sont que nommés.
+ * Ne pas inclure d'en-tête ST ici (inclus par user_kernel_mkconf.h, donc par kernelconf.h dans
+ * tout le noyau) : les descripteurs ne sont que nommés ; constantes de la HAL (GPIO_SPEED_FREQ_*),
+ * résolues dans les sources de la famille et du BSP qui incluent stm32f4xx_hal.h (ENV-35).
  */
 #ifndef _NUCLEO_F439ZI_H_
 #define _NUCLEO_F439ZI_H_
@@ -22,7 +23,7 @@
 #define NUCLEO_F439ZI_FLASH_LATENCY 5u     /* 5 états d'attente, 2,7-3,6 V, 150-168 MHz (RM0090) */
 
 /* --- GPIO (couche gpio.c) ------------------------------------------------------------------ */
-#define _GPIO_DEFAULT_SPEED   GPIO_Speed_50MHz
+#define _GPIO_DEFAULT_SPEED   GPIO_SPEED_FREQ_HIGH   /* OSPEEDR 2 (GPIO_Speed_50MHz de la SPL) */
 
 typedef enum
 {
@@ -57,11 +58,12 @@ typedef enum
 /* priorité NVIC des UART et de l'Ethernet : dans la plage gérée par embOS (>= 0x80) */
 #define NUCLEO_F439ZI_IRQ_PRIO     ((1u << __NVIC_PRIO_BITS) - 4u)
 
-/* --- PHY Ethernet LAN8742A (RMII, adresse 0) : couche eth.c et stm32f4x7_eth_conf.h ---------- */
+/* --- PHY Ethernet LAN8742A (RMII, adresse 0) : pilote dev_stm32f4xx_eth_x de la famille ------ */
 #define BOARD_ETH_PHY_ID1                 0x0007u   /* registre 2 */
 #define BOARD_ETH_PHY_ID2                 0xC130u   /* registre 3, révision masquée */
 #define BOARD_ETH_PHY_ID2_MASK            0xFFF0u
 #define BOARD_ETH_PHY_ADDR_FIRST          0u
+#define BOARD_ETH_PHY_ADDR                BOARD_ETH_PHY_ADDR_FIRST   /* adresse MDIO */
 /* registre spécial d'état (31), champ « speed indication » (bits 4:2) */
 #define BOARD_ETH_PHY_SR                  ((uint16_t)31)
 #define BOARD_ETH_PHY_DUPLEX_SPEED_MASK   ((uint16_t)0x001C)
